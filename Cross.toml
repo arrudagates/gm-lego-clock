@@ -1,0 +1,2 @@
+[target.armv5te-unknown-linux-gnueabi]
+image = "rustdocker/rust:nightly"
