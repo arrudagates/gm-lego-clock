@@ -4,16 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-#ev3dev-lang-rust = "0.12.1"
-ev3dev-lang-rust = { git = "https://github.com/pixix4/ev3dev-lang-rust", features = ["screen"] }
+ev3dev-lang-rust = { git = "https://github.com/pixix4/ev3dev-lang-rust" }
 tokio-tungstenite = { version = "0.17.2", features = ["rustls-tls-native-roots"] }
 tokio = { version = "1", features = ["rt", "net", "macros"] }
 url = "2.3.1"
 futures-util = "0.3.25"
-hex = "0.4.3"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
-image = "0.24.4"
 
 [profile.release]
 lto = true

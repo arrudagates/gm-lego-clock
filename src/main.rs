@@ -1,69 +1,38 @@
-use std::cmp::Ordering;
-
 use ev3dev_lang_rust::{
     motors::{MotorPort, TachoMotor},
     Ev3Result,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct FinalizedHead {
     params: Params,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Params {
     result: Result,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Result {
     number: String,
 }
 
-fn run_motor_to(motor: TachoMotor, to: i32) -> Ev3Result<()> {
-    loop {
-        let pos = motor.get_position()?;
-
-        if ((pos - to) as u32) > 5 {
-            motor.run_direct()?;
-
-            match pos.cmp(&to) {
-                Ordering::Less => motor.set_duty_cycle_sp(40)?,
-                Ordering::Greater => motor.set_duty_cycle_sp(-40)?,
-                Ordering::Equal => {
-                    motor.set_duty_cycle_sp(0)?;
-                    motor.stop()?;
-
-                    eprintln!("current pos: {}", pos);
-
-                    return Ok(());
-                }
-            }
-        } else {
-            motor.set_duty_cycle_sp(0)?;
-            motor.stop()?;
-
-            eprintln!("current pos: {}", pos);
-
-            return Ok(());
-        }
-    }
-}
+const CHAIN_ENDPOINT: &str = "wss://ws-node-gm.terrabiodao.org";
+const GEAR_RATIO: f32 = 0.33;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Ev3Result<()> {
     let motor = TachoMotor::get(MotorPort::OutA)?;
 
     motor.set_stop_action("hold")?;
-
     motor.set_position(0)?;
+    motor.set_speed_sp(500)?;
 
-    let connect_addr = "wss://ws-node-gm.terrabiodao.org";
-
-    let url = url::Url::parse(&connect_addr).unwrap();
+    let url = url::Url::parse(CHAIN_ENDPOINT).unwrap();
 
     let (mut ws_stream, _) = connect_async(url).await.expect("Failed to connect");
 
@@ -79,7 +48,7 @@ async fn main() -> Ev3Result<()> {
 
     let motor = TachoMotor::get(MotorPort::OutA)?;
 
-    let count_per_rot = motor.get_count_per_rot()?;
+    let count_per_rot = ((motor.get_count_per_rot()? as f32) / GEAR_RATIO).round() as i32;
 
     read.for_each(|message| async {
         let data = message.unwrap().into_data();
@@ -93,9 +62,19 @@ async fn main() -> Ev3Result<()> {
                 if let Ok(current_position) = motor.get_position() {
                     let new_position: i32 = (count_per_rot * (block_number % 2760)) / 2760;
 
-                    if new_position != current_position {
+                    let difference = new_position - current_position;
+                    let difference_modulo = if (difference) < 0 {
+                        -difference
+                    } else {
+                        difference
+                    };
+
+                    println!("difference_modulo: {}", difference_modulo);
+
+                    if difference_modulo > 3 {
+                        println!("Old position: {}", current_position);
                         println!("New position: {}", new_position);
-                        if let Err(e) = run_motor_to(motor.clone(), new_position) {
+                        if let Err(e) = motor.run_to_abs_pos(Some(new_position)) {
                             println!("Error running to position: {:?}", e);
                         }
                     }
